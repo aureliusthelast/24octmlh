@@ -40,7 +40,8 @@ export interface AuditReport {
   timestamp: string;
 }
 
-const API_BASE = 'http://localhost:3000';
+// Dynamically resolve backend URL so it works from any device on the network
+const API_BASE = `http://${window.location.hostname}:3000`;
 
 // Built-in Sample Datasets for instant testing
 const CLEAN_SAMPLE: InvoiceData = {
