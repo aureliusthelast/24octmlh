@@ -1,130 +1,82 @@
-# DocuAudit • Intelligent Document & Invoice Auditor Web Application
+# DocuAudit • Document & Invoice Auditor (with RAG Auto-Summarization)
 
-An intelligent, corporate-grade document and invoice auditor web application featuring a high-performance **Rust (Axum + Tokio)** backend and a modern **React 19 + Tailwind CSS** dark-themed frontend with **SmoothUI** AI components.
+A local invoice auditor: a **Rust (Axum + Tokio)** backend with audit rules, a **React + TypeScript + Tailwind + shadcn/ui** frontend, an **AI chat assistant**, **scan reading**, and **RAG document auto-summarization** powered by **Gemma 4** (via the Gemini API).
 
 ---
 
-## Architecture Overview
+## What's New in v0.4 (RAG Auto-Summarization)
+- **Automatic Document Indexing**: Every uploaded PDF or JSON invoice is automatically indexed in an in-memory RAG document store.
+- **Auto-Summarization**: Instantly generates concise 3-5 bullet point executive summaries of uploaded files (`POST /api/rag/summarize`).
+- **Document Store API**: Fetch all indexed documents and their summaries (`GET /api/rag/documents`).
 
+---
+
+## How a file is read & summarized
+1. **JSON / TXT / PDF / Scans**: The backend extracts text/images, runs mathematical consistency checks and risk audit rules (`RULE_001` to `RULE_005`), and indexes the content into the RAG store.
+2. **Auto-Summary**: Gemma 4 or local heuristics summarize the document immediately upon upload.
+3. **Chat Assistant**: Ask questions about any audit finding or document summary in real-time via SSE streaming.
+
+---
+
+## Directory Structure
 ```
-                      +---------------------------------------+
-                      |       Modern Dark UI (React 19)       |
-                      |     (Vite + Tailwind + SmoothUI)      |
-                      |         http://localhost:5173         |
-                      +-------------------+-------------------+
-                                          |
-                +-------------------------+-------------------------+
-                |                         |                         |
-         (Health Polling)          (Auditing & Upload)       (Streaming SSE Chat)
-           GET /health             POST /api/audit-json       POST /api/chat
-                |                  POST /api/upload                 |
-                |                  POST /api/extract                |
-                +-------------------------+-------------------------+
-                                          |
-                      +-------------------v-------------------+
-                      |            Backend Engine             |
-                      |         (Rust + Axum + Tokio)         |
-                      |         http://localhost:3000         |
-                      +-------------------+-------------------+
-                                          |
-         +--------------------------------+--------------------------------+
-         |                                |                                |
-+--------v--------+             +---------v---------+            +---------v---------+
-|  Auditor Engine |             |  Resilient Parser |            |  Multimodal Gemma |
-|  (auditor.rs)   |             |    (parser.rs)    |            | (pdf_scanner.rs)  |
-| 5 Audit Rules   |             | Tracks Derived &  |            | Verbatim Vision   |
-| Status & Risks  |             | Defaulted Fields  |            | & Digital PDF OCR |
-+-----------------+             +-------------------+            +-------------------+
+backend/
+  Cargo.toml
+  .env.example            GEMINI_API_KEY, GEMMA_MODEL, PORT, FRONTEND_DIST
+  src/
+    main.rs               routes, CORS, static UI, RAG endpoints (/api/rag/summarize)
+    rag.rs                RAG document store & auto-summarization logic
+    auditor.rs            domain models + 5 audit rules + tests
+    parser.rs             strict-first, then lenient JSON parser
+    pdf_scanner.rs        native PDF text extraction + heuristic parser
+    extract.rs            /api/extract and shared extraction pipeline
+    enhance.rs            image upscale / contrast / sharpen
+    gemma.rs              Gemma 4 (Gemini API) client
+    chat.rs               /api/chat (SSE stream)
+frontend/                 React + TS + Tailwind + shadcn/ui
+samples/                  clean / faulty / INR / messy JSON + sample_invoice.pdf
 ```
 
 ---
 
-## Key Features
+## How to Run It Locally
 
-### 1. Corporate Auditing Rules (5 Comprehensive Rules)
-- **`RULE_001_EMPTY_ITEMS`**: Detects empty or missing itemized billing line items (**High Risk**).
-- **`RULE_002_SUBTOTAL_MISMATCH`**: Validates line item math (`quantity * unit_price == total`) and ensures the sum of line items equals the declared subtotal (**High/Medium Risk**).
-- **`RULE_003_TOTAL_MISMATCH`**: Verifies `subtotal + tax == total_amount` (**High Risk**).
-- **`RULE_004_HIGH_VALUE_THRESHOLD`**: Currency-aware risk threshold detection (**Medium Risk**):
-  - **USD**: $\ge \$10,000.00$
-  - **INR**: $\ge \text{₹}8,00,000.00$ (8 Lakhs, $\approx \$10,000$ USD equivalent)
-  - Automatic detection of `$` and `₹` symbols.
-- **`RULE_005_SUSPICIOUS_VENDOR`**: Flags missing, abnormally short, or placeholder vendor identities (`"N/A"`, `"Unknown"`, `"Test"`, `"Test Vendor"`, `"Dummy"`, `"Sample Vendor"`) (**High Risk**).
-- **Overall Status Assessment**:
-  - `PASSED`: Zero high or medium risk flags.
-  - `REVIEW_RECOMMENDED`: Flagged for review with medium risk items.
-  - `ACTION_REQUIRED`: High-risk discrepancies requiring immediate auditor action.
-  - High, Medium, and Low risk counts with detailed calculation explanations.
+Prerequisites: Rust 1.75+, Node 18+. A Gemini API key is optional (https://aistudio.google.com/apikey).
 
-### 2. Reading Inputs & Extraction
-- **Schema-Valid JSON**: Audited untouched directly against the schema with zero AI needed.
-- **Messy JSON Normalizer**: Built-in resilient parser maps camelCase, aliased keys, wrapped container objects, numbers as strings with currency symbols (`₹`, `$`, commas), and markdown fences without requiring AI.
-- **Audit Transparency**: **Every field the parser had to default or derive is listed in `derived_fields`**, so nothing is silently "fixed".
-- **Digital PDFs**: Read natively from embedded text layers (`pdf-extract`), with or without an AI key.
-- **Scanned PDFs**: Rendered to page images in the browser (up to 5 pages) and transcribed by Gemma.
-- **Photos & Scans**: Uploaded images (PNG, JPG, WEBP) are upscaled up to 4x, contrast-stretched, and sharpened before Gemma reads them.
-- **Multi-Page Image Invoices**: Up to 8 images are treated as consecutive pages of a single invoice.
-- **Verbatim Rule**: Gemma only transcribes and **never recomputes amounts**, preserving arithmetic errors so they are caught by the auditor.
-- **Metadata**: Each extraction displays its extraction method, model, confidence level, and operational notes.
-
-### 3. AI Features (Powered by Gemma / Gemini)
-- **Streaming Chat Assistant**: Real-time SSE streaming copilot (`/api/chat`) that knows your current audit report findings, invoice figures, and flagged discrepancies.
-- **Suggested Questions**: Contextual prompt chips for instant auditing inquiries.
-- **Free-Form Text Extraction**: Unstructured text and emails are mapped into structured invoices by Gemma.
-- **Key Flexibility**: API keys can be set in `backend/.env` or in the browser's **Gemma AI** settings dialog.
-- **Key Status Badge**: Shows `Server key`, `Browser key`, or `Native mode`.
-- **Offline Capable**: Without an API key, JSON, messy JSON, and digital PDFs function entirely offline.
-
-### 4. Modern Dark UI with SmoothUI Components
-- **Framework**: React 19 + Tailwind CSS + Lucide Icons + Motion.
-- **SmoothUI AI Components**:
-  - `@smoothui/agent-avatar`: Animated seeded generative pixel avatar for the auditor assistant.
-  - `@smoothui/ai-conversation`: Pinned scroll thread tracking streamed responses.
-  - `@smoothui/ai-message`: Polished chat message bubbles with copy and action states.
-  - `@smoothui/ai-response`: Word-by-word streaming text animation with animated caret.
-  - `@smoothui/ai-loader`: Smooth waiting and thinking indicators.
-  - `@smoothui/ai-suggestions`: Radiating suggestion chips for prompt suggestions.
-  - `@smoothui/ai-prompt-input`: Auto-expanding composer with send/stop toggling.
-  - `@smoothui/ai-context-meter`: Visual token context meter for active audit reports.
-  - `@smoothui/ai-approval`: Human-in-the-loop decision card for audit approvals.
-  - `@smoothui/ai-artifact`: Frame for previewing generated vendor dispute emails.
-  - `@smoothui/ai-citation`: Interactive citation pills linking to audit rules.
-  - `@smoothui/ai-sources`: Context source cards linking to document data.
-- **Cross-Device Ready**: The Rust backend serves the built React UI on fallback, allowing access from phones and tablets on the same network.
-
----
-
-## API Endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | Health check reporting service status, version, and server key presence |
-| `POST` | `/api/audit-json` | Audits raw schema-valid or messy JSON text with derivation logging |
-| `POST` | `/api/upload` | Multipart file upload for digital PDFs, scanned PDFs, images, and JSON |
-| `POST` | `/api/extract` | Multimodal Gemma extraction for multi-page images (up to 8) or free-form text |
-| `POST` | `/api/chat` | Streaming SSE chat assistant aware of active audit report context |
-
----
-
-## Running the Project
-
-### 1. Build the Frontend
 ```bash
-cd frontend
-pnpm install
-pnpm build
-```
-
-### 2. Start the Backend Server
-```bash
+# 1. Backend
 cd backend
-# Optional: create backend/.env with GEMINI_API_KEY="your-key"
-cargo run
-```
-
-Open `http://localhost:3000` in your browser.
-To run automated Rust unit tests:
-```bash
-cd backend
+cp .env.example .env      # optional: paste GEMINI_API_KEY
 cargo test
+cargo run                 # http://localhost:3000
+
+# 2. Frontend (Dev mode)
+cd frontend
+npm install
+npm run dev               # http://localhost:5173
 ```
+
+---
+
+## How to Deploy via GitHub
+
+### Option 1: Deploy on Railway (Recommended)
+1. Push your repository to **GitHub**.
+2. Go to [Railway](https://railway.com/) and click **New Project** -> **Deploy from GitHub repo**.
+3. Add your environment variable in settings:
+   - `GEMINI_API_KEY` = `your-api-key-here`
+4. Generate a public domain. Every `git push` to GitHub will automatically trigger a rebuild and live deployment.
+
+### Option 2: Deploy on Render
+1. Connect your GitHub repository to [Render](https://render.com/) as a **New Web Service**.
+2. **Build Command**:
+   ```bash
+   cd frontend && npm install && npm run build && cd ../backend && cargo build --release
+   ```
+3. **Start Command**:
+   ```bash
+   ./backend/target/release/invoice-auditor-backend
+   ```
+4. **Environment Variables**:
+   - `GEMINI_API_KEY` = `your-api-key-here`
+   - `FRONTEND_DIST` = `frontend/dist`
