@@ -73,6 +73,16 @@ pub struct AuditFlag {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExtractionMetadata {
+    pub method: String,
+    pub model: String,
+    pub confidence: String,
+    pub notes: String,
+    #[serde(default)]
+    pub derived_fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AuditReport {
     pub invoice_id: String,
     pub vendor_name: String,
@@ -84,6 +94,8 @@ pub struct AuditReport {
     pub flags: Vec<AuditFlag>,
     pub parsed_invoice: InvoiceData,
     pub timestamp: String,
+    #[serde(default)]
+    pub extraction: Option<ExtractionMetadata>,
 }
 
 const FLOAT_EPSILON: f64 = 0.01;
@@ -247,7 +259,17 @@ pub fn audit_invoice(invoice: &InvoiceData) -> AuditReport {
         flags,
         parsed_invoice: invoice.clone(),
         timestamp: Utc::now().to_rfc3339(),
+        extraction: None,
     }
+}
+
+pub fn audit_invoice_with_extraction(
+    invoice: &InvoiceData,
+    extraction: Option<ExtractionMetadata>,
+) -> AuditReport {
+    let mut report = audit_invoice(invoice);
+    report.extraction = extraction;
+    report
 }
 
 #[cfg(test)]
