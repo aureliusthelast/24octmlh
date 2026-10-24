@@ -1,0 +1,23 @@
+{
+  "invoice_id": "INV-INR-2026-101",
+  "vendor_name": "Tata Consultancy & Cloud Ltd.",
+  "invoice_date": "2026-10-24",
+  "currency": "INR",
+  "items": [
+    {
+      "description": "Managed Kubernetes Cluster",
+      "quantity": 1.0,
+      "unit_price": 150000.0,
+      "total": 150000.0
+    },
+    {
+      "description": "High IOPS Database Volumes (NVMe)",
+      "quantity": 2.0,
+      "unit_price": 25000.0,
+      "total": 50000.0
+    }
+  ],
+  "subtotal": 200000.0,
+  "tax": 36000.0,
+  "total_amount": 236000.0
+}
