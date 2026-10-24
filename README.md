@@ -39,6 +39,40 @@ An intelligent, corporate-grade document and invoice auditor web application fea
 
 ---
 
+## Directory Structure
+
+```
+.
+├── backend/
+│   ├── Cargo.toml          # Rust crate configuration & dependencies
+│   ├── .env.example        # Optional environment variables (GEMINI_API_KEY, PORT, etc.)
+│   └── src/
+│       ├── main.rs         # Axum server, API route handlers, SSE chat stream & static UI serving
+│       ├── auditor.rs      # Core domain models, 5 audit rules & unit tests
+│       ├── parser.rs       # Resilient JSON parser (normalizes messy keys, wrappers & currency)
+│       └── pdf_scanner.rs  # Native PDF text extractor & Gemma multimodal vision OCR
+├── frontend/
+│   ├── package.json        # Frontend scripts and React 19 dependencies
+│   ├── vite.config.ts      # Vite bundler configuration
+│   ├── tailwind.config.js  # Tailwind CSS configuration
+│   ├── index.html          # HTML entry point
+│   └── src/
+│       ├── App.tsx         # Main application layout, audit viewer & AI chat drawer
+│       ├── components/     # SmoothUI AI components (chat, avatars, approvals, artifacts)
+│       ├── lib/            # Image preprocessing pipeline (canvas 4x upscale, contrast, sharpening)
+│       ├── samples.ts      # Built-in one-click test sample fixtures
+│       └── types.ts        # Shared TypeScript data models & audit interfaces
+├── samples/
+│   ├── clean_invoice.json  # Valid USD invoice passing all rules
+│   ├── faulty_invoice.json # Deliberately malformed invoice triggering audit flags
+│   ├── inr_invoice.json    # Valid INR invoice testing Indian currency threshold
+│   ├── messy_invoice.json  # Resilient parser test fixture (messy keys & strings)
+│   └── sample_invoice.pdf  # Sample PDF invoice for native & OCR scanning
+└── README.md
+```
+
+---
+
 ## Key Features
 
 ### 1. Corporate Auditing Rules (5 Comprehensive Rules)
@@ -71,7 +105,7 @@ An intelligent, corporate-grade document and invoice auditor web application fea
 - **Streaming Chat Assistant**: Real-time SSE streaming copilot (`/api/chat`) that knows your current audit report findings, invoice figures, and flagged discrepancies.
 - **Suggested Questions**: Contextual prompt chips for instant auditing inquiries.
 - **Free-Form Text Extraction**: Unstructured text and emails are mapped into structured invoices by Gemma.
-- **Key Flexibility**: API keys can be set in `backend/.env` or in the browser's **Gemma AI** settings dialog.
+- **Key Flexibility**: API keys can be set in `backend/.env` or in the browser's **Gemma AI** settings dialog (saved locally in `localStorage`).
 - **Key Status Badge**: Shows `Server key`, `Browser key`, or `Native mode`.
 - **Offline Capable**: Without an API key, JSON, messy JSON, and digital PDFs function entirely offline.
 
@@ -106,25 +140,90 @@ An intelligent, corporate-grade document and invoice auditor web application fea
 
 ---
 
-## Running the Project
+## Getting Started
 
-### 1. Build the Frontend
-```bash
-cd frontend
-pnpm install
-pnpm build
-```
+### Prerequisites
+- **Rust & Cargo** (v1.75+ or newer)
+- **Node.js** (v18+ or newer) and **npm** (or **pnpm**)
+- *(Optional)* A Google Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey) for multimodal image/scan transcription and streaming AI chat.
 
-### 2. Start the Backend Server
-```bash
-cd backend
-# Optional: create backend/.env with GEMINI_API_KEY="your-key"
-cargo run
-```
+---
 
-Open `http://localhost:3000` in your browser.
-To run automated Rust unit tests:
+### Running the Application
+
+#### Option A: Development Mode (Vite Dev Server + Axum Backend)
+
+1. **Start the Rust Backend**:
+   ```bash
+   cd backend
+   cp .env.example .env    # optional: set GEMINI_API_KEY="your-key"
+   cargo run               # runs on http://localhost:3000
+   ```
+
+2. **Start the Frontend Dev Server**:
+   ```bash
+   cd frontend
+   npm install             # or pnpm install
+   npm run dev             # runs on http://localhost:5173
+   ```
+
+#### Option B: Unified Production Build (Single Port `3000`)
+
+The Rust backend is configured to automatically serve the compiled frontend distribution files (`frontend/dist`):
+
+1. **Build the Frontend**:
+   ```bash
+   cd frontend
+   npm install
+   npm run build
+   ```
+
+2. **Run the Backend**:
+   ```bash
+   cd backend
+   cargo run
+   ```
+
+3. Open **`http://localhost:3000`** in your browser. All devices on your local network can access the application via your machine's local IP address (e.g., `http://192.168.x.x:3000`).
+
+---
+
+### Automated Backend Tests
+
+To run the automated Rust unit test suite:
 ```bash
 cd backend
 cargo test
 ```
+
+---
+
+## Deployment
+
+### Deploy on Railway
+1. Push your repository to **GitHub**.
+2. Create a **New Project** in [Railway](https://railway.com/) and select **Deploy from GitHub repo**.
+3. Set the environment variable:
+   - `GEMINI_API_KEY`: *(Optional)* Your Gemini API key.
+4. Set the build command to compile both frontend and backend:
+   ```bash
+   cd frontend && npm install && npm run build && cd ../backend && cargo build --release
+   ```
+5. Set start command:
+   ```bash
+   ./backend/target/release/invoice-auditor-backend
+   ```
+
+### Deploy on Render
+1. Connect your repository to [Render](https://render.com/) as a **New Web Service**.
+2. **Build Command**:
+   ```bash
+   cd frontend && npm install && npm run build && cd ../backend && cargo build --release
+   ```
+3. **Start Command**:
+   ```bash
+   ./backend/target/release/invoice-auditor-backend
+   ```
+4. **Environment Variables**:
+   - `GEMINI_API_KEY`: *(Optional)* Your Gemini API key.
+   - `FRONTEND_DIST`: `frontend/dist`
