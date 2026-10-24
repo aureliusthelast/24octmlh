@@ -35,7 +35,6 @@ An intelligent, corporate-grade document and invoice auditor web application fea
 | 5 Audit Rules   |             | Tracks Derived &  |            | Verbatim Vision   |
 | Status & Risks  |             | Defaulted Fields  |            | & Digital PDF OCR |
 +-----------------+             +-------------------+            +-------------------+
-```
 
 ---
 
