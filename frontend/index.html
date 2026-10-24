@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,12 +7,241 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
+    <link rel="stylesheet" href="./style.css" />
   </head>
-  <body class="bg-[#090a0f] text-zinc-100 min-h-screen">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+  <body>
+    <div id="app" class="app-layout">
+      <!-- Header -->
+      <header class="top-nav">
+        <div class="brand">
+          <div class="brand-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <path d="M9 15l2 2 4-4"></path>
+            </svg>
+          </div>
+          <div>
+            <h1>DocuAudit <span class="tag-version">v0.1</span></h1>
+            <p class="subtitle">Automated Document & Invoice Integrity Auditor</p>
+          </div>
+        </div>
+
+        <div class="nav-right">
+          <button id="openAiSettingsBtn" class="btn btn-secondary ai-settings-btn" title="Configure Gemma AI / Vision OCR">
+            <span class="btn-icon">🤖</span>
+            <span>Gemma AI</span>
+            <span id="aiStatusTag" class="ai-mode-tag">Native Mode</span>
+          </button>
+          <div id="healthStatus" class="status-pill status-checking">
+            <span class="pulse-dot"></span>
+            <span id="healthStatusText">Checking backend...</span>
+          </div>
+          <button id="refreshHealthBtn" class="icon-btn" title="Refresh health status">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6"></path>
+              <path d="M1 20v-6h6"></path>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Container -->
+      <main class="content-container">
+        <!-- Controls & Upload Section -->
+        <section class="action-bar-card">
+          <div class="dropzone" id="dropZone">
+            <input type="file" id="fileInput" accept=".json,.txt,.pdf,application/pdf" class="file-hidden-input" />
+            <div class="dropzone-content">
+              <div class="dropzone-icon">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+              </div>
+              <div class="dropzone-text">
+                <p class="primary-text">Drag and drop invoice document or PDF here, or <span class="browse-link">browse file</span></p>
+                <p class="secondary-text">Supports <code>.json</code> (auto-normalized), <code>.txt</code>, and <code>.pdf</code> (Gemma AI scanner)</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="quick-actions">
+            <div class="actions-label">Quick Test Scenarios:</div>
+            <div class="button-group">
+              <button id="testCleanBtn" class="btn btn-secondary">
+                <span class="btn-icon">⚡</span>
+                Clean (USD)
+              </button>
+              <button id="testInrBtn" class="btn btn-secondary">
+                <span class="btn-icon">🇮🇳</span>
+                Clean (INR)
+              </button>
+              <button id="testMessyBtn" class="btn btn-secondary" title="Test camelCase, string numbers, and wrapped JSON">
+                <span class="btn-icon">🌀</span>
+                Messy JSON
+              </button>
+              <button id="testFaultyBtn" class="btn btn-secondary">
+                <span class="btn-icon">⚠️</span>
+                Faulty Sample
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Status Toast Banner -->
+        <div id="toastNotification" class="toast-banner hidden">
+          <span id="toastIcon">ℹ️</span>
+          <span id="toastMessage">Ready</span>
+        </div>
+
+        <!-- Split Screen Comparison View -->
+        <section class="split-view">
+          <!-- Left Pane: Parsed Payload -->
+          <div class="pane pane-left">
+            <div class="pane-header">
+              <div class="pane-title-group">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="16 18 22 12 16 6"></polyline>
+                  <polyline points="8 6 2 12 8 18"></polyline>
+                </svg>
+                <h2>Parsed Invoice Payload</h2>
+              </div>
+              <div class="pane-actions">
+                <button id="copyJsonBtn" class="btn btn-ghost" title="Copy raw JSON">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span>Copy</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Summary Chips -->
+            <div id="invoiceSummaryBar" class="summary-meta-bar hidden">
+              <div class="meta-item">
+                <span class="meta-label">ID:</span>
+                <span id="summaryId" class="meta-value">—</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Vendor:</span>
+                <span id="summaryVendor" class="meta-value">—</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Date:</span>
+                <span id="summaryDate" class="meta-value">—</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Reported Total:</span>
+                <span id="summaryTotal" class="meta-value highlight">—</span>
+              </div>
+            </div>
+
+            <!-- JSON Pre Code Viewer -->
+            <div class="code-container">
+              <pre id="jsonViewer" class="code-block"><code class="language-json">// Upload an invoice or click a sample button above to run the audit...</code></pre>
+            </div>
+          </div>
+
+          <!-- Right Pane: Audit Findings & Risk Warnings -->
+          <div class="pane pane-right">
+            <div class="pane-header">
+              <div class="pane-title-group">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+                <h2>Audit Findings & Risk Analysis</h2>
+              </div>
+              <div id="overallStatusBadge" class="status-badge badge-neutral">PENDING</div>
+            </div>
+
+            <!-- Risk Metrics Counter Cards -->
+            <div class="metrics-grid">
+              <div class="metric-card metric-high">
+                <div class="metric-num" id="highRiskCount">0</div>
+                <div class="metric-label">High Risk</div>
+              </div>
+              <div class="metric-card metric-medium">
+                <div class="metric-num" id="mediumRiskCount">0</div>
+                <div class="metric-label">Medium Risk</div>
+              </div>
+              <div class="metric-card metric-low">
+                <div class="metric-num" id="lowRiskCount">0</div>
+                <div class="metric-label">Low Risk</div>
+              </div>
+              <div class="metric-card metric-total">
+                <div class="metric-num" id="totalFlagsCount">0</div>
+                <div class="metric-label">Total Flags</div>
+              </div>
+            </div>
+
+            <!-- Flag List Container -->
+            <div id="flagsContainer" class="flags-list">
+              <div class="empty-flags-state">
+                <div class="empty-icon">🛡️</div>
+                <h3>No Audit In Progress</h3>
+                <p>Upload a file or choose a sample to inspect mathematical consistency, vendor credibility, and compliance thresholds.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- Footer -->
+      <footer class="app-footer">
+        <p>DocuAudit Engine • Rust Axum Backend & TypeScript Frontend • Open Source MIT</p>
+      </footer>
+    </div>
+
+    <!-- AI Settings Modal -->
+    <div id="aiModal" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <span class="modal-icon">🤖</span>
+            <h3>Gemma AI Scanner Settings</h3>
+          </div>
+          <button id="closeAiModalBtn" class="icon-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">
+            Configure Google Gemma / Gemini API or local Ollama to enable multimodal vision OCR on messy, handwritten, and scanned invoice PDFs.
+          </p>
+
+          <div class="form-group">
+            <label for="geminiApiKeyInput">Gemini / Gemma API Key (Cloud OCR)</label>
+            <input
+              type="password"
+              id="geminiApiKeyInput"
+              class="text-input"
+              placeholder="AIzaSy... (leave empty to use server env var)"
+            />
+            <span class="form-hint">Used for multimodal document understanding and table transcription.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="ollamaHostInput">Local Ollama Host (Optional Local AI)</label>
+            <input
+              type="text"
+              id="ollamaHostInput"
+              class="text-input"
+              placeholder="e.g. http://localhost:11434"
+            />
+            <span class="form-hint">Uses local gemma2 / gemma3 when cloud API is not configured.</span>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="saveAiSettingsBtn" class="btn btn-primary">Save Settings</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./src/main.ts"></script>
   </body>
 </html>
