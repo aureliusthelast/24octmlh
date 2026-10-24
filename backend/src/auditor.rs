@@ -39,7 +39,7 @@ pub struct InvoiceData {
     pub total_amount: f64,
 }
 
-fn default_currency() -> String {
+pub fn default_currency() -> String {
     "USD".to_string()
 }
 

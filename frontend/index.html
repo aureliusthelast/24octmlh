@@ -31,6 +31,11 @@
         </div>
 
         <div class="nav-right">
+          <button id="openAiSettingsBtn" class="btn btn-secondary ai-settings-btn" title="Configure Gemma AI / Vision OCR">
+            <span class="btn-icon">🤖</span>
+            <span>Gemma AI</span>
+            <span id="aiStatusTag" class="ai-mode-tag">Native Mode</span>
+          </button>
           <div id="healthStatus" class="status-pill status-checking">
             <span class="pulse-dot"></span>
             <span id="healthStatusText">Checking backend...</span>
@@ -50,7 +55,7 @@
         <!-- Controls & Upload Section -->
         <section class="action-bar-card">
           <div class="dropzone" id="dropZone">
-            <input type="file" id="fileInput" accept=".json,.txt" class="file-hidden-input" />
+            <input type="file" id="fileInput" accept=".json,.txt,.pdf,application/pdf" class="file-hidden-input" />
             <div class="dropzone-content">
               <div class="dropzone-icon">
                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -60,8 +65,8 @@
                 </svg>
               </div>
               <div class="dropzone-text">
-                <p class="primary-text">Drag and drop invoice document here, or <span class="browse-link">browse file</span></p>
-                <p class="secondary-text">Supports structured <code>.json</code> or text payloads</p>
+                <p class="primary-text">Drag and drop invoice document or PDF here, or <span class="browse-link">browse file</span></p>
+                <p class="secondary-text">Supports <code>.json</code> (auto-normalized), <code>.txt</code>, and <code>.pdf</code> (Gemma AI scanner)</p>
               </div>
             </div>
           </div>
@@ -71,15 +76,19 @@
             <div class="button-group">
               <button id="testCleanBtn" class="btn btn-secondary">
                 <span class="btn-icon">⚡</span>
-                Test Clean (USD)
+                Clean (USD)
               </button>
               <button id="testInrBtn" class="btn btn-secondary">
                 <span class="btn-icon">🇮🇳</span>
-                Test Clean (INR)
+                Clean (INR)
+              </button>
+              <button id="testMessyBtn" class="btn btn-secondary" title="Test camelCase, string numbers, and wrapped JSON">
+                <span class="btn-icon">🌀</span>
+                Messy JSON
               </button>
               <button id="testFaultyBtn" class="btn btn-secondary">
                 <span class="btn-icon">⚠️</span>
-                Test Faulty Sample
+                Faulty Sample
               </button>
             </div>
           </div>
@@ -188,6 +197,49 @@
       <footer class="app-footer">
         <p>DocuAudit Engine • Rust Axum Backend & TypeScript Frontend • Open Source MIT</p>
       </footer>
+    </div>
+
+    <!-- AI Settings Modal -->
+    <div id="aiModal" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <span class="modal-icon">🤖</span>
+            <h3>Gemma AI Scanner Settings</h3>
+          </div>
+          <button id="closeAiModalBtn" class="icon-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">
+            Configure Google Gemma / Gemini API or local Ollama to enable multimodal vision OCR on messy, handwritten, and scanned invoice PDFs.
+          </p>
+
+          <div class="form-group">
+            <label for="geminiApiKeyInput">Gemini / Gemma API Key (Cloud OCR)</label>
+            <input
+              type="password"
+              id="geminiApiKeyInput"
+              class="text-input"
+              placeholder="AIzaSy... (leave empty to use server env var)"
+            />
+            <span class="form-hint">Used for multimodal document understanding and table transcription.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="ollamaHostInput">Local Ollama Host (Optional Local AI)</label>
+            <input
+              type="text"
+              id="ollamaHostInput"
+              class="text-input"
+              placeholder="e.g. http://localhost:11434"
+            />
+            <span class="form-hint">Uses local gemma2 / gemma3 when cloud API is not configured.</span>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="saveAiSettingsBtn" class="btn btn-primary">Save Settings</button>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="./src/main.ts"></script>

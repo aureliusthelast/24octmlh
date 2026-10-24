@@ -125,6 +125,34 @@ const INR_SAMPLE: InvoiceData = {
   total_amount: 236000.0,
 };
 
+// Messy, camelCase, wrapped invoice with string numbers and currency symbols
+const MESSY_SAMPLE: Record<string, unknown> = {
+  status: 'success',
+  document: {
+    invoiceId: 'INV-2026-MESSY-77',
+    vendorName: 'Global Cloud HyperScale Inc.',
+    invoiceDate: '2026-10-24',
+    currencyCode: 'INR',
+    lineItems: [
+      {
+        name: 'Cloud TPU v5e Pod Slice Hours',
+        qty: '25.0',
+        unitPrice: '₹ 1,200.00',
+        amount: '₹ 30,000.00',
+      },
+      {
+        name: 'High Performance Lustre File Storage',
+        qty: '2',
+        unitPrice: '₹ 7,500.00',
+        amount: '₹ 15,000.00',
+      },
+    ],
+    subTotal: '₹ 45,000.00',
+    taxAmount: '₹ 8,100.00',
+    totalAmount: '₹ 53,100.00',
+  },
+};
+
 // State
 let lastAuditedInvoice: InvoiceData | null = null;
 
@@ -137,7 +165,17 @@ const dropZone = document.getElementById('dropZone') as HTMLDivElement;
 const fileInput = document.getElementById('fileInput') as HTMLInputElement;
 const testCleanBtn = document.getElementById('testCleanBtn') as HTMLButtonElement;
 const testInrBtn = document.getElementById('testInrBtn') as HTMLButtonElement;
+const testMessyBtn = document.getElementById('testMessyBtn') as HTMLButtonElement;
 const testFaultyBtn = document.getElementById('testFaultyBtn') as HTMLButtonElement;
+
+// AI Settings Modal Elements
+const openAiSettingsBtn = document.getElementById('openAiSettingsBtn') as HTMLButtonElement;
+const aiStatusTag = document.getElementById('aiStatusTag') as HTMLSpanElement;
+const aiModal = document.getElementById('aiModal') as HTMLDivElement;
+const closeAiModalBtn = document.getElementById('closeAiModalBtn') as HTMLButtonElement;
+const geminiApiKeyInput = document.getElementById('geminiApiKeyInput') as HTMLInputElement;
+const ollamaHostInput = document.getElementById('ollamaHostInput') as HTMLInputElement;
+const saveAiSettingsBtn = document.getElementById('saveAiSettingsBtn') as HTMLButtonElement;
 
 const toastEl = document.getElementById('toastNotification') as HTMLDivElement;
 const toastIconEl = document.getElementById('toastIcon') as HTMLSpanElement;
@@ -296,10 +334,17 @@ function renderAuditReport(report: AuditReport) {
   });
 }
 
-// API: Send JSON invoice
-async function auditJsonPayload(invoice: InvoiceData) {
+// API: Send JSON invoice (supports standard or flexible raw objects)
+async function auditJsonPayload(invoice: unknown) {
   try {
-    showToast(`Sending ${invoice.invoice_id} to auditor...`, 'info');
+    const candidateId =
+      typeof invoice === 'object' && invoice !== null
+        ? (invoice as Record<string, unknown>).invoice_id ||
+          (invoice as Record<string, unknown>).invoiceId ||
+          'Invoice'
+        : 'Invoice';
+
+    showToast(`Sending ${candidateId} to auditor...`, 'info');
     const response = await fetch(`${API_BASE}/api/audit-json`, {
       method: 'POST',
       headers: {
@@ -322,15 +367,33 @@ async function auditJsonPayload(invoice: InvoiceData) {
   }
 }
 
-// API: Upload multipart file
+// API: Upload multipart file (supports .json, .txt, and .pdf via Gemma AI)
 async function uploadInvoiceFile(file: File) {
   try {
-    showToast(`Uploading and auditing ${file.name}...`, 'info');
+    const isPdf = file.name.toLowerCase().endsWith('.pdf');
+    if (isPdf) {
+      showToast(`Scanning PDF document with Gemma AI / Native parser...`, 'info');
+    } else {
+      showToast(`Uploading and normalizing ${file.name}...`, 'info');
+    }
+
     const formData = new FormData();
     formData.append('file', file, file.name);
 
+    const apiKey = localStorage.getItem('gemini_api_key') || '';
+    const ollamaHost = localStorage.getItem('ollama_host') || '';
+
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers['X-Gemini-API-Key'] = apiKey;
+    }
+    if (ollamaHost) {
+      headers['X-Gemma-Endpoint'] = ollamaHost;
+    }
+
     const response = await fetch(`${API_BASE}/api/upload`, {
       method: 'POST',
+      headers,
       body: formData,
     });
 
@@ -348,8 +411,62 @@ async function uploadInvoiceFile(file: File) {
   }
 }
 
+// AI Settings Handlers
+function updateAiStatusBadge() {
+  const apiKey = localStorage.getItem('gemini_api_key') || '';
+  const ollama = localStorage.getItem('ollama_host') || '';
+
+  if (apiKey) {
+    aiStatusTag.textContent = 'Gemma Cloud';
+    aiStatusTag.style.background = 'rgba(16, 185, 129, 0.2)';
+    aiStatusTag.style.color = '#34d399';
+  } else if (ollama) {
+    aiStatusTag.textContent = 'Ollama Gemma';
+    aiStatusTag.style.background = 'rgba(56, 189, 248, 0.2)';
+    aiStatusTag.style.color = '#38bdf8';
+  } else {
+    aiStatusTag.textContent = 'Native Mode';
+    aiStatusTag.style.background = 'rgba(99, 102, 241, 0.2)';
+    aiStatusTag.style.color = '#818cf8';
+  }
+}
+
+function openAiSettings() {
+  geminiApiKeyInput.value = localStorage.getItem('gemini_api_key') || '';
+  ollamaHostInput.value = localStorage.getItem('ollama_host') || '';
+  aiModal.classList.remove('hidden');
+}
+
+function closeAiSettings() {
+  aiModal.classList.add('hidden');
+}
+
+function saveAiSettings() {
+  const apiKey = geminiApiKeyInput.value.trim();
+  const ollama = ollamaHostInput.value.trim();
+
+  if (apiKey) {
+    localStorage.setItem('gemini_api_key', apiKey);
+  } else {
+    localStorage.removeItem('gemini_api_key');
+  }
+
+  if (ollama) {
+    localStorage.setItem('ollama_host', ollama);
+  } else {
+    localStorage.removeItem('ollama_host');
+  }
+
+  updateAiStatusBadge();
+  closeAiSettings();
+  showToast('Gemma AI settings saved successfully!', 'success');
+}
+
 // Event Listeners Setup
 function initApp() {
+  // Initialize AI status badge
+  updateAiStatusBadge();
+
   // Health refresh
   refreshHealthBtn.addEventListener('click', checkBackendHealth);
   checkBackendHealth();
@@ -360,7 +477,16 @@ function initApp() {
   // Quick action buttons
   testCleanBtn.addEventListener('click', () => auditJsonPayload(CLEAN_SAMPLE));
   testInrBtn.addEventListener('click', () => auditJsonPayload(INR_SAMPLE));
+  testMessyBtn.addEventListener('click', () => auditJsonPayload(MESSY_SAMPLE));
   testFaultyBtn.addEventListener('click', () => auditJsonPayload(FAULTY_SAMPLE));
+
+  // AI Settings Modal listeners
+  openAiSettingsBtn.addEventListener('click', openAiSettings);
+  closeAiModalBtn.addEventListener('click', closeAiSettings);
+  saveAiSettingsBtn.addEventListener('click', saveAiSettings);
+  aiModal.addEventListener('click', (e) => {
+    if (e.target === aiModal) closeAiSettings();
+  });
 
   // Drag and drop zone
   dropZone.addEventListener('click', () => fileInput.click());

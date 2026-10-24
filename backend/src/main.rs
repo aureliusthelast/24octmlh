@@ -1,8 +1,11 @@
 mod auditor;
+mod parser;
+mod pdf_scanner;
 
 use axum::{
+    body::Bytes,
     extract::Multipart,
-    http::{Method, StatusCode},
+    http::{HeaderMap, Method, StatusCode},
     response::Json,
     routing::{get, post},
     Router,
@@ -28,10 +31,16 @@ async fn main() {
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers(Any);
 
-    // Resolve the frontend dist directory relative to the backend binary's working dir
+    // Resolve the frontend dist directory whether run from repo root or backend/ subdir
     let frontend_dist = std::env::var("FRONTEND_DIST")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("../frontend/dist"));
+        .unwrap_or_else(|_| {
+            if PathBuf::from("frontend/dist").exists() {
+                PathBuf::from("frontend/dist")
+            } else {
+                PathBuf::from("../frontend/dist")
+            }
+        });
 
     // API routes
     let api_routes = Router::new()
@@ -87,38 +96,90 @@ async fn health_check() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "ok",
         "service": "invoice-auditor",
-        "version": "0.1.0"
+        "version": "0.2.0",
+        "features": {
+            "gemma_pdf_scanner": true,
+            "resilient_json_parser": true
+        }
     }))
 }
 
 async fn audit_json_handler(
-    Json(invoice): Json<auditor::InvoiceData>,
+    body_bytes: Bytes,
 ) -> Result<Json<auditor::AuditReport>, (StatusCode, Json<serde_json::Value>)> {
-    tracing::info!("Auditing JSON invoice id: {}", invoice.invoice_id);
+    let text = String::from_utf8(body_bytes.to_vec()).map_err(|err| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("Payload is not valid UTF-8 text: {}", err)
+            })),
+        )
+    })?;
+
+    let invoice = parser::parse_flexible_invoice(&text).map_err(|err| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("Failed to parse invoice JSON: {}", err),
+                "hint": "Check payload structure or format."
+            })),
+        )
+    })?;
+
+    tracing::info!("Audited flexible JSON invoice id: {}", invoice.invoice_id);
     let report = auditor::audit_invoice(&invoice);
     Ok(Json(report))
 }
 
 async fn upload_handler(
+    headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Result<Json<auditor::AuditReport>, (StatusCode, Json<serde_json::Value>)> {
     let mut file_content: Option<Vec<u8>> = None;
-    let mut file_name = String::from("uploaded_file");
+    let mut file_name = String::from("uploaded_document");
+    let mut form_api_key: Option<String> = None;
+    let mut form_ollama_host: Option<String> = None;
+
+    // Check custom request headers for AI configuration
+    let header_api_key = headers
+        .get("x-gemini-api-key")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let header_ollama = headers
+        .get("x-gemma-endpoint")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
 
     while let Ok(Some(field)) = multipart.next_field().await {
-        if let Some(name) = field.file_name() {
-            file_name = name.to_string();
+        let field_name = field.name().unwrap_or_default().to_string();
+
+        if field_name == "api_key" || field_name == "apiKey" {
+            if let Ok(text) = field.text().await {
+                if !text.trim().is_empty() {
+                    form_api_key = Some(text.trim().to_string());
+                }
+            }
+        } else if field_name == "ollama_host" || field_name == "ollamaHost" {
+            if let Ok(text) = field.text().await {
+                if !text.trim().is_empty() {
+                    form_ollama_host = Some(text.trim().to_string());
+                }
+            }
+        } else if let Some(fname) = field.file_name() {
+            file_name = fname.to_string();
+            if let Ok(data) = field.bytes().await {
+                file_content = Some(data.to_vec());
+            }
+        } else if file_content.is_none() {
+            if let Ok(data) = field.bytes().await {
+                if !data.is_empty() {
+                    file_content = Some(data.to_vec());
+                }
+            }
         }
-        let data = field.bytes().await.map_err(|err| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "error": format!("Failed reading file field: {}", err)
-                })),
-            )
-        })?;
-        file_content = Some(data.to_vec());
-        break;
     }
 
     let bytes = match file_content {
@@ -127,32 +188,53 @@ async fn upload_handler(
             return Err((
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({
-                    "error": "No file uploaded or file was empty"
+                    "error": "No file received in multipart request or file was empty"
                 })),
             ));
         }
     };
 
-    let text = String::from_utf8(bytes).map_err(|err| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": format!("Uploaded file '{}' is not valid UTF-8 text: {}", file_name, err)
-            })),
-        )
-    })?;
+    let resolved_api_key = header_api_key.or(form_api_key);
+    let resolved_ollama = header_ollama.or(form_ollama_host);
 
-    let invoice: auditor::InvoiceData = serde_json::from_str(&text).map_err(|err| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": format!("Failed to parse JSON file '{}': {}", file_name, err),
-                "hint": "Ensure the file contains valid JSON matching the invoice schema."
-            })),
-        )
-    })?;
+    let is_pdf_file = pdf_scanner::is_pdf(&bytes, &file_name);
 
-    tracing::info!("Successfully parsed and auditing file: {}", file_name);
+    let invoice = if is_pdf_file {
+        tracing::info!("Received PDF file '{}' ({} bytes). Running PDF extraction...", file_name, bytes.len());
+        pdf_scanner::process_pdf(&bytes, resolved_api_key.as_deref(), resolved_ollama.as_deref())
+            .await
+            .map_err(|err| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": format!("Failed extracting PDF invoice '{}': {}", file_name, err),
+                        "hint": "Ensure PDF contains recognizable text or set GEMINI_API_KEY for vision OCR on scanned images."
+                    })),
+                )
+            })?
+    } else {
+        tracing::info!("Received text/JSON file '{}' ({} bytes). Normalizing and parsing...", file_name, bytes.len());
+        let text = String::from_utf8(bytes).map_err(|err| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!("Uploaded file '{}' is not valid UTF-8 text: {}", file_name, err)
+                })),
+            )
+        })?;
+
+        parser::parse_flexible_invoice(&text).map_err(|err| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!("Failed to parse JSON file '{}': {}", file_name, err),
+                    "hint": "Check that the file contains invoice data."
+                })),
+            )
+        })?
+    };
+
+    tracing::info!("Successfully parsed document for invoice ID: {}", invoice.invoice_id);
     let report = auditor::audit_invoice(&invoice);
     Ok(Json(report))
 }
