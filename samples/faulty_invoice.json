@@ -1,0 +1,23 @@
+{
+  "invoice_id": "INV-2026-9902-FAULTY",
+  "vendor_name": "N/A",
+  "invoice_date": "2026-10-24",
+  "currency": "USD",
+  "items": [
+    {
+      "description": "Offshore Software Consulting Hours",
+      "quantity": 100.0,
+      "unit_price": 150.0,
+      "total": 15000.0
+    },
+    {
+      "description": "Expedited Security Penetration Audit",
+      "quantity": 1.0,
+      "unit_price": 4500.0,
+      "total": 4500.0
+    }
+  ],
+  "subtotal": 18500.0,
+  "tax": 1500.0,
+  "total_amount": 25000.0
+}
