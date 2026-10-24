@@ -40,8 +40,11 @@ export interface AuditReport {
   timestamp: string;
 }
 
-// Dynamically resolve backend URL so it works from any device on the network
-const API_BASE = `http://${window.location.hostname}:3000`;
+// When served from the backend (same origin), use relative paths.
+// When running Vite dev server separately, fall back to localhost:3000.
+const API_BASE = window.location.port === '5173'
+  ? `http://${window.location.hostname}:3000`
+  : '';
 
 // Built-in Sample Datasets for instant testing
 const CLEAN_SAMPLE: InvoiceData = {

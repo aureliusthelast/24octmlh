@@ -8,7 +8,9 @@ use axum::{
     Router,
 };
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -26,11 +28,31 @@ async fn main() {
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers(Any);
 
-    let app = Router::new()
+    // Resolve the frontend dist directory relative to the backend binary's working dir
+    let frontend_dist = std::env::var("FRONTEND_DIST")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("../frontend/dist"));
+
+    // API routes
+    let api_routes = Router::new()
         .route("/health", get(health_check))
         .route("/api/audit-json", post(audit_json_handler))
         .route("/api/upload", post(upload_handler))
         .layer(cors);
+
+    // Build final app: API routes first, then fall back to serving frontend static files
+    let app = if frontend_dist.exists() {
+        tracing::info!("Serving frontend from: {}", frontend_dist.display());
+        let serve_dir = ServeDir::new(&frontend_dist)
+            .not_found_service(ServeFile::new(frontend_dist.join("index.html")));
+        api_routes.fallback_service(serve_dir)
+    } else {
+        tracing::warn!(
+            "Frontend dist not found at '{}'. Run 'cd frontend && npm run build' to enable serving the UI from the backend.",
+            frontend_dist.display()
+        );
+        api_routes
+    };
 
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -39,6 +61,9 @@ async fn main() {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("Starting Invoice Auditor Backend on http://{}", addr);
+    if frontend_dist.exists() {
+        tracing::info!("Open http://localhost:{} in your browser (works on all devices on the network!)", port);
+    }
 
     let listener = match tokio::net::TcpListener::bind(addr).await {
         Ok(l) => l,
