@@ -40,9 +40,18 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("Starting Invoice Auditor Backend on http://{}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .expect("Failed to bind TCP listener to address");
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => {
+            eprintln!("\n❌ Error: Port {} is already in use by another process.", port);
+            eprintln!("💡 Tip: Free port {} with: fuser -k {}/tcp (or specify another port: PORT=3001 cargo run)\n", port, port);
+            std::process::exit(1);
+        }
+        Err(err) => {
+            eprintln!("❌ Failed to bind to address {}: {}", addr, err);
+            std::process::exit(1);
+        }
+    };
 
     axum::serve(listener, app)
         .await
